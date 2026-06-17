@@ -20,11 +20,13 @@ const keyboards = require('./keyboards');
 const { isInScopeIdea, detectIdeaDirection } = require('./ideaClassify');
 const { fixKeyboardLayout } = require('./keyboardLayout');
 const { normalizeDisplayName, formatMenuWelcome, formatCta } = require('./personalize');
-const { resetSession, pushHistory } = require('./session');
+const { replaceSession, pushHistory } = require('./session');
 const { generateConcept, interpretUserMessage } = require('./openrouter');
 const { isButtonOnlyStep } = require('./interpretContext');
 const { notifyAdmin } = require('./notify');
 const { withTyping } = require('./typing');
+const { trackUser, trackConcept, addLead } = require('./analytics');
+const { handleAdminText } = require('./admin');
 
 const TEXT_FLOW_NEXT = {
   [TEXT_FLOW.BOT_AUDIENCE]: 3,
@@ -84,23 +86,23 @@ function contactValueFromCtx(ctx) {
 }
 
 async function askUserName(ctx) {
-  resetSession(ctx.session);
-  ctx.session.step = STEPS.ASK_NAME;
+  replaceSession(ctx, { step: STEPS.ASK_NAME });
   pushHistory(ctx.session, 'assistant', copy.ASK_NAME, MAX_HISTORY);
   await reply(ctx, copy.ASK_NAME, keyboards.removeKeyboard());
 }
 
-async function showMainMenu(ctx) {
-  const s = ctx.session;
-  const { firstName, nameUsed } = s;
+async function handleReset(ctx) {
+  replaceSession(ctx, { step: STEPS.ASK_NAME });
+  await reply(ctx, copy.ASK_NAME, keyboards.removeKeyboard());
+}
 
-  resetSession(s);
-  s.firstName = firstName;
-  s.nameUsed = nameUsed;
-  s.step = STEPS.MENU;
+async function showMainMenu(ctx) {
+  const { firstName, nameUsed } = ctx.session;
+
+  replaceSession(ctx, { firstName, nameUsed, step: STEPS.MENU });
 
   const menuText = formatMenuWelcome(firstName);
-  pushHistory(s, 'assistant', menuText, MAX_HISTORY);
+  pushHistory(ctx.session, 'assistant', menuText, MAX_HISTORY);
   await reply(ctx, menuText, keyboards.mainMenuKeyboard());
 }
 
@@ -427,6 +429,7 @@ async function runConceptGeneration(ctx) {
 
   try {
     s.conceptText = await withTyping(ctx, () => generateConcept(s));
+    trackConcept();
     s.leadStatus = 'concept_shown';
     pushHistory(s, 'assistant', s.conceptText, MAX_HISTORY);
     await reply(ctx, s.conceptText);
@@ -446,6 +449,7 @@ async function completeLead(ctx) {
 
   await reply(ctx, copy.FINAL, keyboards.removeKeyboard());
   pushHistory(s, 'assistant', copy.FINAL, MAX_HISTORY);
+  addLead({ ctx, session: s });
   await notifyAdmin(ctx.telegram, ctx.state.adminChatId, ctx, s);
 }
 
@@ -455,8 +459,12 @@ function registerHandlers(bot, adminChatId) {
     return next();
   });
 
-  bot.start(askUserName);
-  bot.command('reset', askUserName);
+  bot.start(async (ctx) => {
+    trackUser(ctx.from.id);
+    await askUserName(ctx);
+  });
+  bot.command('reset', handleReset);
+  bot.hears(/^\/reset(?:@\w+)?\.?\s*$/i, handleReset);
 
   bot.hears(BTN.BACK_MENU, goToMenu);
   bot.hears(BTN.CHANGE_DIR, goToMenu);
@@ -506,6 +514,8 @@ function registerHandlers(bot, adminChatId) {
   bot.on('text', async (ctx) => {
     const rawText = ctx.message.text?.trim();
     if (!rawText || rawText.startsWith('/')) return;
+
+    if (await handleAdminText(ctx, adminChatId)) return;
 
     const { text, wasFixed } = normalizeUserText(rawText);
     if (!text) return;

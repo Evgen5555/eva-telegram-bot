@@ -35,8 +35,18 @@ function defaultSession() {
   };
 }
 
+function replaceSession(ctx, overrides = {}) {
+  const fresh = defaultSession();
+  Object.assign(fresh, overrides);
+  ctx.session = fresh;
+}
+
 function resetSession(session) {
-  Object.assign(session, defaultSession());
+  const fresh = defaultSession();
+  for (const key of Object.keys(session)) {
+    delete session[key];
+  }
+  Object.assign(session, fresh);
 }
 
 function trimHistory(history, max) {
@@ -77,6 +87,7 @@ function answersSummary(session) {
 
 module.exports = {
   defaultSession,
+  replaceSession,
   resetSession,
   pushHistory,
   answersSummary,

@@ -1,9 +1,8 @@
-const fs = require('fs');
-const { EVA_PROMPT_PATH } = require('./config');
+const { getActivePromptBase } = require('./settings');
 const { answersSummary } = require('./session');
 
 function loadBasePrompt() {
-  return fs.readFileSync(EVA_PROMPT_PATH, 'utf-8').trim();
+  return getActivePromptBase();
 }
 
 function buildConceptPrompt(session) {

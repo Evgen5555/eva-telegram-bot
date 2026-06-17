@@ -1,10 +1,10 @@
 const axios = require('axios');
 const {
   OPENROUTER_API_KEY,
-  OPENROUTER_MODEL,
   OPENROUTER_INTERPRET_MODEL,
   OPENROUTER_URL,
 } = require('./config');
+const { getActiveModel } = require('./settings');
 const { buildConceptPrompt } = require('./prompt');
 const { getInterpretContext } = require('./interpretContext');
 
@@ -70,10 +70,11 @@ async function interpretUserMessage(session, userText) {
   return parsed;
 }
 
-async function generateConcept(session) {  const response = await axios.post(
+async function generateConcept(session) {
+  const response = await axios.post(
     OPENROUTER_URL,
     {
-      model: OPENROUTER_MODEL,
+      model: getActiveModel(),
       messages: [
         { role: 'system', content: buildConceptPrompt(session) },
         { role: 'user', content: 'Сформируй короткий вывод «💡 Что я вижу» по правилам из системного промпта.' },
