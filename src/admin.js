@@ -37,9 +37,30 @@ function backKeyboard() {
   return Markup.inlineKeyboard([[Markup.button.callback('◀️ Назад', 'admin:menu')]]);
 }
 
-function truncate(text, max = 800) {
-  if (text.length <= max) return text;
-  return `${text.slice(0, max)}…`;
+const PROMPT_CHUNK_SIZE = 3800;
+
+function escapeHtml(text) {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function splitText(text, chunkSize) {
+  if (text.length <= chunkSize) return [text];
+
+  const chunks = [];
+  for (let offset = 0; offset < text.length; offset += chunkSize) {
+    chunks.push(text.slice(offset, offset + chunkSize));
+  }
+  return chunks;
+}
+
+async function sendPromptPreview(ctx, prompt) {
+  const chunks = splitText(prompt, PROMPT_CHUNK_SIZE);
+
+  for (let index = 0; index < chunks.length; index += 1) {
+    const partLabel = chunks.length > 1 ? ` (${index + 1}/${chunks.length})` : '';
+    const body = escapeHtml(chunks[index]);
+    await replyHtml(ctx, `<b>Текущий промпт${partLabel}:</b>\n<pre>${body}</pre>`);
+  }
 }
 
 function formatDate(iso) {
@@ -174,16 +195,18 @@ function registerAdminHandlers(bot, adminChatId) {
 
     const saved = getSettings().prompt?.trim();
     const source = saved ? 'settings.json' : 'eva_prompt.txt';
-    const preview = truncate(getActivePromptBase(), 600);
+    const prompt = getActivePromptBase();
 
     await editOrReply(
       ctx,
       `📝 <b>Системный промпт</b>\n\n` +
-        `Источник: ${source}\n\n` +
-        `<b>Текущий промпт:</b>\n<pre>${preview.replace(/</g, '&lt;')}</pre>\n\n` +
+        `Источник: ${source}\n` +
+        `Длина: ${prompt.length} символов\n\n` +
         'Отправьте новый текст промпта одним сообщением.',
       backKeyboard()
     );
+
+    await sendPromptPreview(ctx, prompt);
   });
 
   bot.action('admin:stats', async (ctx) => {
